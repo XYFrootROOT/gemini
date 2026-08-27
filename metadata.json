@@ -1,0 +1,6 @@
+{
+  "name": "Gemini Chatbot",
+  "description": "Multi-turn AI chat interface powered by Gemini with customizable system instructions and model switching.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
