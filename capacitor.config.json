@@ -1,0 +1,10 @@
+{
+  "appId": "com.gemini.chatassistant",
+  "appName": "Gemini 智能助手",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  }
+}

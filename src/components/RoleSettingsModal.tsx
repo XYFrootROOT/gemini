@@ -10,7 +10,8 @@ import {
   Check, 
   RotateCcw,
   Sliders,
-  Info
+  Info,
+  Key
 } from 'lucide-react';
 import { ChatRolePreset } from '../types';
 import { ROLE_PRESETS } from '../data/roles';
@@ -24,6 +25,8 @@ interface RoleSettingsModalProps {
   onChangeCustomInstruction: (text: string) => void;
   temperature: number;
   onChangeTemperature: (val: number) => void;
+  customApiKey: string;
+  onChangeCustomApiKey: (key: string) => void;
 }
 
 export const RoleSettingsModal: React.FC<RoleSettingsModalProps> = ({
@@ -35,9 +38,12 @@ export const RoleSettingsModal: React.FC<RoleSettingsModalProps> = ({
   onChangeCustomInstruction,
   temperature,
   onChangeTemperature,
+  customApiKey,
+  onChangeCustomApiKey,
 }) => {
   const [selectedPresetId, setSelectedPresetId] = useState<string>(currentRole.id);
   const [tempInstruction, setTempInstruction] = useState<string>(customInstruction);
+  const [tempApiKey, setTempApiKey] = useState<string>(customApiKey);
 
   if (!isOpen) return null;
 
@@ -49,9 +55,9 @@ export const RoleSettingsModal: React.FC<RoleSettingsModalProps> = ({
   const handleSave = () => {
     const activePreset = ROLE_PRESETS.find((p) => p.id === selectedPresetId) || {
       id: 'custom',
-      name: 'Custom Persona',
+      name: '自定义角色',
       icon: 'Sparkles',
-      description: 'Customized system instruction',
+      description: '用户自定义系统提示词与角色设定',
       systemInstruction: tempInstruction,
       starterPrompts: [],
     };
@@ -61,6 +67,7 @@ export const RoleSettingsModal: React.FC<RoleSettingsModalProps> = ({
       systemInstruction: tempInstruction,
     });
     onChangeCustomInstruction(tempInstruction);
+    onChangeCustomApiKey(tempApiKey);
     onClose();
   };
 
@@ -92,8 +99,8 @@ export const RoleSettingsModal: React.FC<RoleSettingsModalProps> = ({
               <Sliders className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-base font-semibold text-neutral-100">Chatbot Persona & System Prompt</h2>
-              <p className="text-xs text-neutral-400">Define the tone, specialty, and rules for Gemini</p>
+              <h2 className="text-base font-semibold text-neutral-100">AI 角色设定与偏好设置</h2>
+              <p className="text-xs text-neutral-400">定制 Gemini 的说话语气、专业领域及离线/手机端 API 配置</p>
             </div>
           </div>
           <button
@@ -110,7 +117,7 @@ export const RoleSettingsModal: React.FC<RoleSettingsModalProps> = ({
           {/* Preset Roles Grid */}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2.5">
-              Choose a Role Preset
+              选择预设角色
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {ROLE_PRESETS.map((preset) => {
@@ -154,8 +161,8 @@ export const RoleSettingsModal: React.FC<RoleSettingsModalProps> = ({
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label htmlFor="system-instruction-input" className="text-xs font-semibold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
-                <span>Active System Instruction</span>
-                <span className="text-[10px] text-neutral-500 lowercase font-normal">(Sent with each request)</span>
+                <span>生效中的系统提示词 (System Instruction)</span>
+                <span className="text-[10px] text-neutral-500 font-normal">（每次对话均携带）</span>
               </label>
               <button
                 type="button"
@@ -167,7 +174,7 @@ export const RoleSettingsModal: React.FC<RoleSettingsModalProps> = ({
                 className="text-[11px] text-neutral-400 hover:text-neutral-200 flex items-center gap-1 transition-colors cursor-pointer"
               >
                 <RotateCcw className="w-3 h-3" />
-                Reset to Default
+                重置为默认
               </button>
             </div>
             <textarea
@@ -175,15 +182,15 @@ export const RoleSettingsModal: React.FC<RoleSettingsModalProps> = ({
               rows={4}
               value={tempInstruction}
               onChange={(e) => setTempInstruction(e.target.value)}
-              placeholder="e.g., You are an expert Python and TypeScript tutor..."
+              placeholder="例如：你是一位精通 Python 和 TypeScript 的编程导师..."
               className="w-full p-3 text-xs sm:text-sm bg-neutral-950 border border-neutral-800 rounded-xl text-neutral-100 placeholder-neutral-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/50 resize-none font-mono leading-relaxed"
             />
             <div className="flex items-center justify-between text-[11px] text-neutral-500">
               <span className="flex items-center gap-1">
                 <Info className="w-3 h-3" />
-                Guides Gemini's tone, formatting style, and behavioral constraints.
+                指导 Gemini 的语调、格式输出规范以及回答约束。
               </span>
-              <span>{tempInstruction.length} chars</span>
+              <span>{tempInstruction.length} 字</span>
             </div>
           </div>
 
@@ -191,10 +198,10 @@ export const RoleSettingsModal: React.FC<RoleSettingsModalProps> = ({
           <div className="space-y-2 pt-2 border-t border-neutral-800">
             <div className="flex items-center justify-between">
               <label htmlFor="temperature-slider" className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
-                Temperature ({temperature})
+                发散度 Temperature ({temperature})
               </label>
               <span className="text-xs text-neutral-400 font-mono">
-                {temperature <= 0.3 ? 'Deterministic & Exact' : temperature <= 0.7 ? 'Balanced & Natural' : 'Creative & Exploratory'}
+                {temperature <= 0.3 ? '严谨精准' : temperature <= 0.7 ? '均衡自然' : '发散创意'}
               </span>
             </div>
             <input
@@ -208,6 +215,27 @@ export const RoleSettingsModal: React.FC<RoleSettingsModalProps> = ({
               className="w-full accent-sky-500 cursor-pointer bg-neutral-800 h-1.5 rounded-lg appearance-none"
             />
           </div>
+
+          {/* Optional Direct Client API Key for Standalone APK support */}
+          <div className="space-y-2 pt-2 border-t border-neutral-800">
+            <div className="flex items-center justify-between">
+              <label htmlFor="client-api-key-input" className="text-xs font-semibold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
+                <Key className="w-3.5 h-3.5 text-amber-400" />
+                <span>自定义 Gemini API Key（选填 / APK 脱机使用）</span>
+              </label>
+            </div>
+            <input
+              id="client-api-key-input"
+              type="password"
+              value={tempApiKey}
+              onChange={(e) => setTempApiKey(e.target.value)}
+              placeholder="打包为独立 APK 安装在手机上时，可在手机端填入自己的 Gemini Key"
+              className="w-full p-2.5 text-xs bg-neutral-950 border border-neutral-800 rounded-xl text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/50 font-mono"
+            />
+            <p className="text-[11px] text-neutral-500">
+              在网页端默认通过服务端安全代理，无需填写；当打包成独立手机 APK 脱离后端服务器时，填入 Key 可直接连接 Gemini。
+            </p>
+          </div>
         </div>
 
         {/* Footer */}
@@ -216,7 +244,7 @@ export const RoleSettingsModal: React.FC<RoleSettingsModalProps> = ({
             onClick={onClose}
             className="px-4 py-2 rounded-xl text-xs font-medium text-neutral-300 hover:bg-neutral-800 transition-colors cursor-pointer"
           >
-            Cancel
+            取消
           </button>
           <button
             id="save-role-btn"
@@ -224,7 +252,7 @@ export const RoleSettingsModal: React.FC<RoleSettingsModalProps> = ({
             className="px-4 py-2 rounded-xl text-xs font-medium bg-sky-500 hover:bg-sky-400 text-neutral-950 font-semibold shadow-md transition-colors flex items-center gap-1.5 cursor-pointer"
           >
             <Check className="w-3.5 h-3.5" />
-            Apply Settings
+            应用设定
           </button>
         </div>
       </div>

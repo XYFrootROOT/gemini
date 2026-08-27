@@ -21,6 +21,13 @@ export default function App() {
   const [currentRole, setCurrentRole] = useState<ChatRolePreset>(ROLE_PRESETS[0]);
   const [customInstruction, setCustomInstruction] = useState<string>(ROLE_PRESETS[0].systemInstruction);
   const [temperature, setTemperature] = useState<number>(0.7);
+  const [customApiKey, setCustomApiKey] = useState<string>(() => {
+    try {
+      return localStorage.getItem('gemini_custom_api_key') || '';
+    } catch {
+      return '';
+    }
+  });
 
   const [input, setInput] = useState<string>('');
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
@@ -37,6 +44,16 @@ export default function App() {
       console.warn('Failed to save messages to local storage:', e);
     }
   }, [messages]);
+
+  // Sync customApiKey to localStorage
+  const handleSaveCustomApiKey = (key: string) => {
+    setCustomApiKey(key);
+    try {
+      localStorage.setItem('gemini_custom_api_key', key);
+    } catch (e) {
+      console.warn('Failed to save custom api key:', e);
+    }
+  };
 
   // Smooth auto-scroll to bottom
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
@@ -84,68 +101,144 @@ export default function App() {
     abortControllerRef.current = abortController;
 
     try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messages: newMessagesHistory.map((m) => ({
-            role: m.role === 'assistant' ? 'model' : 'user',
-            text: m.content,
-          })),
-          systemInstruction: customInstruction || currentRole.systemInstruction,
-          model: currentModel,
-          temperature,
-          stream: true,
-        }),
-        signal: abortController.signal,
-      });
+      // If user provided a client-side API Key (e.g. running inside standalone mobile APK without server)
+      if (customApiKey && customApiKey.trim()) {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:streamGenerateContent?alt=sse&key=${customApiKey.trim()}`;
+        
+        const contents = newMessagesHistory.map((m) => ({
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: m.content }],
+        }));
 
-      if (!response.ok) {
-        const errJson = await response.json().catch(() => ({}));
-        throw new Error(errJson.error || `Server responded with status ${response.status}`);
-      }
+        const bodyPayload: any = {
+          contents,
+          generationConfig: {
+            temperature,
+          },
+        };
 
-      if (!response.body) {
-        throw new Error('ReadableStream not supported in this browser.');
-      }
+        const activeInstruction = customInstruction || currentRole.systemInstruction;
+        if (activeInstruction && activeInstruction.trim()) {
+          bodyPayload.systemInstruction = {
+            parts: [{ text: activeInstruction.trim() }],
+          };
+        }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let accumulatedContent = '';
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(bodyPayload),
+          signal: abortController.signal,
+        });
 
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
+        if (!response.ok) {
+          const errJson = await response.json().catch(() => ({}));
+          throw new Error(errJson.error?.message || `Google API 错误 (${response.status})`);
+        }
 
-        const rawChunk = decoder.decode(value, { stream: true });
-        const lines = rawChunk.split('\n');
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+        let accumulatedContent = '';
 
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (trimmed.startsWith('data: ')) {
-            const dataStr = trimmed.slice(6);
-            if (dataStr === '[DONE]') {
-              break;
+        if (!reader) throw new Error('无法读取响应数据流');
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          const rawChunk = decoder.decode(value, { stream: true });
+          const lines = rawChunk.split('\n');
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('data: ')) {
+              const jsonStr = trimmed.slice(6);
+              try {
+                const parsed = JSON.parse(jsonStr);
+                const chunkText = parsed.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                if (chunkText) {
+                  accumulatedContent += chunkText;
+                  setMessages((prev) =>
+                    prev.map((msg) =>
+                      msg.id === assistantMessageId
+                        ? { ...msg, content: accumulatedContent }
+                        : msg
+                    )
+                  );
+                }
+              } catch (e) {
+                // Ignore partial JSON chunks
+              }
             }
-            try {
-              const parsed = JSON.parse(dataStr);
-              if (parsed.error) {
-                throw new Error(parsed.error);
+          }
+        }
+      } else {
+        // Standard Web app proxy route
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messages: newMessagesHistory.map((m) => ({
+              role: m.role === 'assistant' ? 'model' : 'user',
+              text: m.content,
+            })),
+            systemInstruction: customInstruction || currentRole.systemInstruction,
+            model: currentModel,
+            temperature,
+            stream: true,
+          }),
+          signal: abortController.signal,
+        });
+
+        if (!response.ok) {
+          const errJson = await response.json().catch(() => ({}));
+          throw new Error(errJson.error || `服务器响应状态码：${response.status}`);
+        }
+
+        if (!response.body) {
+          throw new Error('当前浏览器不支持流式传输（ReadableStream）。');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let accumulatedContent = '';
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          const rawChunk = decoder.decode(value, { stream: true });
+          const lines = rawChunk.split('\n');
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('data: ')) {
+              const dataStr = trimmed.slice(6);
+              if (dataStr === '[DONE]') {
+                break;
               }
-              if (parsed.text) {
-                accumulatedContent += parsed.text;
-                setMessages((prev) =>
-                  prev.map((msg) =>
-                    msg.id === assistantMessageId
-                      ? { ...msg, content: accumulatedContent }
-                      : msg
-                  )
-                );
+              try {
+                const parsed = JSON.parse(dataStr);
+                if (parsed.error) {
+                  throw new Error(parsed.error);
+                }
+                if (parsed.text) {
+                  accumulatedContent += parsed.text;
+                  setMessages((prev) =>
+                    prev.map((msg) =>
+                      msg.id === assistantMessageId
+                        ? { ...msg, content: accumulatedContent }
+                        : msg
+                    )
+                  );
+                }
+              } catch (parseErr) {
+                // Ignore non-JSON partial data lines
               }
-            } catch (parseErr) {
-              // Ignore non-JSON partial data lines
             }
           }
         }
@@ -160,7 +253,7 @@ export default function App() {
             msg.id === assistantMessageId
               ? {
                   ...msg,
-                  content: err.message || 'An error occurred while generating response.',
+                  content: err.message || '生成回答时发生错误，请稍后重试。',
                   isError: true,
                 }
               : msg
@@ -269,6 +362,8 @@ export default function App() {
         onChangeCustomInstruction={setCustomInstruction}
         temperature={temperature}
         onChangeTemperature={setTemperature}
+        customApiKey={customApiKey}
+        onChangeCustomApiKey={handleSaveCustomApiKey}
       />
     </div>
   );
