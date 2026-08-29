@@ -18,14 +18,16 @@ jobs:
         with:
           node-version: 22
 
-      - name: 设置 Java JDK
+      - name: 设置 Java JDK 21 (Capacitor 7/8 要求)
         uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
-          java-version: 17
+          distribution: 'temurin'
+          java-version: '21'
 
-      - name: 设置 Android SDK
-        uses: android-actions/setup-android@v3
+      - name: 配置 Android SDK 环境变量
+        run: |
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
 
       - name: 安装项目依赖
         run: npm install
@@ -33,22 +35,28 @@ jobs:
       - name: 构建前端静态资源
         run: npx vite build
 
-      - name: 安装 Capacitor 依赖并初始化 Android 原生工程
+      - name: 初始化并同步 Capacitor Android 工程
         run: |
-          npm install --save @capacitor/core @capacitor/cli @capacitor/android
-          npx cap init "Gemini 智能助手" "com.gemini.chatassistant" --web-dir dist
-          npx cap add android
+          if [ ! -d "android" ]; then
+            npx cap add android
+          fi
           npx cap sync android
 
-      - name: 为 Gradle 赋予可执行权限并编译 Debug APK
+      - name: 接受 Android SDK 协议并赋予 Gradle 权限
         run: |
+          yes | sdkmanager --licenses || true
           cd android
           chmod +x ./gradlew
-          ./gradlew assembleDebug --stacktrace
 
-      - name: 上传编译好的 APK 安装包
+      - name: 编译 Android Debug APK
+        run: |
+          cd android
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: 上传生成的 APK 安装包
         uses: actions/upload-artifact@v4
         with:
           name: Gemini-Chat-Debug-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
           retention-days: 14
